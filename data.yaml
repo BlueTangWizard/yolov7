@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['person']
+
+roboflow:
+  workspace: xml2yolo-ryert
+  project: aerial-detections
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/xml2yolo-ryert/aerial-detections/dataset/1

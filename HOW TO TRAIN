@@ -1,0 +1,206 @@
+----HOW TO TRAIN ON YOLOv7----
+
+1. Download yolov7 and install requirements.txt: 
+
+git clone https://github.com/WongKinYiu/yolov7.git
+cd yolov7
+pip install -r requirements.txt
+
+
+2. Download/Locate dataset:
+
+	I like to place my dataset in the yolov7 directory with an 80/20 split between train and valid
+	
+	The directory should look like this:
+	
+├── yolov7
+ 	└── train
+		└── images (folder including all training images) 80% of total images
+		└── labels (folder including all training labels)
+ 	└── valid
+ 		└── images (folder including all validation images) 20% of total images
+		└── labels (folder including all validation labels)
+		
+	Roboflow is very useful for labelling datasets or for converting other peoples datasets into the yolov7 label format
+		
+3. Create config training file:
+	
+	This is just a simple 	.yaml	 file that points to the location of the training dataset along with the relevant 
+	classes you are training on
+	
+	I also place this file in the yolov7 directory and call it something memorable
+	for instance 'aerial-person.yaml'
+	
+	It should consist of:
+	
+train: /home/aerial/yolov7/train	# the full directory of the training images
+val: /home/aerial/yolov7/valid		# the full directory of the validation images
+nc: 1					# the number of classes
+names: ['person']			# the name of the classes. If multiple classes seperate as:
+					# ['person', 'drone', 'dog']
+		
+					
+4. Begin training:
+
+	Basic training command:
+	
+	
+	python train.py --workers x --device x --batch-size x --data x.yaml --img 640 640 --cfg cfg/training/x.yaml --weights 'x' --name x --hyp data/hyp.scratch.p5.yaml --epochs x --cache
+	
+	
+	where:	workers (int): how many subprocesses to parallelize during training (usually 8 but can be played around with or 
+		removed if maxing out CPU
+		
+		device (int): which GPU device to use (indexed at 0) so 0 for main GPU. If multigpu training list GPUs (0,1)
+		
+		batch-size (int): must be a power of 2 (8, 16, 32, 64 or higher depending on GPU). If multigpu then batch-size is 
+		split in half between GPUs. The larger the batch-size the faster the training. The batch-size is only limited 
+		by the GPUs VRAM
+		
+		data (config file): for instance:	aerial-person.yaml
+		this is the config file that was created earlier
+		
+		img (train_int valid_int): what the images are rescaled to for training. Set it to the same number that is used for 
+		inference which is usually 640
+		
+		cfg (cfg/training/..): The configuration file for the model architecture. There are possible choices are:
+			yolov7-e6e.yaml
+			yolov7-d6.yaml
+			yolov7-e6.yaml
+			yolov7-w6.yaml
+			yolov7x.yaml
+			yolov7.yaml
+			yolov7-tiny.yaml
+		keep this the same as the size of the weights you want to transfer train from 
+		e.g.: if --weights yolov7.pt then --cfg cfg/training/yolov7.yaml
+		
+		weights (weight.pt): yolov7 can train from pre-existing weights. The options are:
+			yolov7-e6e.pt
+			yolov7-d6.pt
+			yolov7-e6.pt
+			yolov7-w6.pt
+			yolov7x.pt
+			yolov7.pt
+			yolov7-tiny.pt
+			
+		to train from scratch use:	--weights ''
+		
+		name: the name of the folder that contains the training data. If the same name is used it is given a number suffix
+		
+		hyp (data/hyp.scratch.p5.yaml): hyperparameters for more complex training. I usually leave it as 
+		hyp.scratch.p5.yaml but any parameters from the /data/ directory can be used. For no hyperparameters
+		do not include the --hyp flag
+		
+		epochs (int): The number of iterations. yolov7 auto stops training if no progress is made so I like to set it to
+		1000
+		
+		cache: loads the dataset into the RAM and heavily increases training speed
+	
+		
+		
+		
+
+	For multiple GPU training:
+	
+	
+	python -m torch.distributed.launch --nproc_per_node 2 train.py --workers 8 --device 0,1 --sync-bn --batch-size 128 --data data/x.yaml --img 640 640 --cfg cfg/training/x.yaml --weights '' --name x --hyp data/hyp.scratch.p5.yaml --epochs 1000 --cache
+	
+	where:	torch.distributed.launch: enables multigpu
+	
+		nproc_per_node (int): number of GPUs (usually 2)
+		
+		device (list): the IDs of the GPUs you are using
+		
+		sync-bn: --sync-bn is a multi-GPU option that tends to improve earlier results. 
+		It's recommended for short and/or small dataset multi-GPU trainings.
+		
+		
+	
+	While training I like to run	nvtop	(sudo snap install nvtop) to monitor the GPUs
+	
+	While training the most important info you can see the current epoch number, the gpu_mem being used and the mAP@.5:.95
+	
+		mAP@.5:.95 is the mean average precision between the accuracy threshhold of 0.5 - 0.95 confidence.
+		the higher the better
+		it will start small and hopefully improve
+		1.0 would be a perfect model but cannot exist so anything above 0.9 is excellent
+		
+		
+	The training is saved under runs/train/training_name
+	
+	Inside the weights folder are the saved model weights. best.pt contains the best weights.
+		
+		
+		
+5. Converting yolov7 pytorch (.pt) model to Open Neural Network Exchange (.onnx) model:
+	
+	This is an intermediate step to convert to tf and tflite models
+	It is easiest to copy the trained model weights to the yolov7 dir.
+	
+	python export.py --weights your-weights.pt --grid --end2end --simplify \
+        --topk-all 100 --iou-thres 0.65 --conf-thres 0.35 --img-size 640 640 --max-wh 640
+	
+	
+6. Converting onnx to tensorflow (.tf)
+	
+   ***	From another terminal:
+
+	Create virtual environment 'venv-tf-convert':
+		python3 -m venv venv-tf-convert  # might have to install venv
+	
+	Then activate the environment with:
+		source venv-tf-convert/bin/activate
+	
+	If on my machine (Adam Cihelka) the venv should already exist so you can just activate 
+	it
+	
+	Once activated ensure:
+	pip install onnx==1.12 onnxruntime onnxsim onnx-tf tensorflow tensorflow_probability
+	
+	Convert onnx:
+	When you run this it will export the model to /tfmodel. Go through the whole process 
+	for one weights before converting more weights
+	
+	rm -r tfmodel
+	onnx-tf convert -i yolov7.onnx -o tfmodel/
+	
+	Convert tf to tflite using the following script. 
+	Mine is named tf-to-tflite.py and located in yolov7 dir.
+	It contains:
+
+#####################################################################
+	
+import tensorflow as tf
+
+converter = tf.lite.TFLiteConverter.from_saved_model('tfmodel/')
+tflite_model = converter.convert()
+
+with open('tfmodel/yolov7_model.tflite', 'wb') as f:
+	f.write(tflite_model)
+
+#####################################################################
+
+	When you run (python3 tf-to-tflite.py) it converts the model in /tfmodel from tf to 
+	tflite and it will be saved there.
+	
+	
+7. Enabling tflite model to run on edgetpu
+	
+	First install the edgetpu compiler:
+	
+	curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+
+	echo "deb https://packages.cloud.google.com/apt coral-edgetpu-stable main" | sudo tee /etc/apt/sources.list.d/coral-edgetpu.list
+
+	sudo apt-get update
+
+	sudo apt-get install edgetpu-compiler		
+	
+	
+	
+	
+	
+	
+	
+	
+	

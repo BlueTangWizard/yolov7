@@ -1,0 +1,4 @@
+train: /home/aerial/yolov7/train
+val: /home/aerial/yolov7/valid
+nc: 1
+names: ['person']
